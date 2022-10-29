@@ -3,7 +3,7 @@
 
 if [[ "$1" == '' ]]
 	then
-		echo 'Usage: ./oc.sh saveLocation [display]
+		echo 'Usage: ./oc.sh saveLocation [display]'
 		echo 'No save location passed - quitting !'
 		exit -1
 	fi
@@ -176,6 +176,6 @@ while [[ $endLoop != 'True' ]]
 				${supportedCommands["${commandArr[0]}"]}
 			else
 				echo "No such command as '${commandArr[0]}'"
-				echo "Type 'help' to get an info'
+				echo 'Type 'help' to get an info'
 			fi
 	done
