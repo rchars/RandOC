@@ -29,14 +29,31 @@ echo "Detected GPUS:"
 for minor in "${minorsArr[@]}"
 	do
 		echo "[$minor] => ${modelsArr[$minor]}"
+		nvidia-smi -i "$minor" -pm 1
+		# nvidia-settings -V=error -a "[gpu:$minor]/GPUPowerMizerMode=1"
+		nvidia-settings -a "[gpu:$minor]/GPUPowerMizerMode=1"
 	done
 
 
-declare -A attribsArr
-attribsArr[memClk]="[gpu:#]/GPUMemoryTransferRateOffsetAllPerformanceLevels"
-attribsArr[coreClk]="[gpu:#]/GPUGraphicsClockOffsetAllPerformanceLevels"
-attribsArr[fanControl]="[gpu:#]/GPUFanControlState"
-attribsArr[fanSpeed]="[fan:#]/GPUTargetFanSpeed"
+declare -A nsAttribsArr
+nsAttribsArr[memOffset]="[gpu:#]/GPUMemoryTransferRateOffsetAllPerformanceLevels"
+nsAttribsArr[coreOffset]="[gpu:#]/GPUGraphicsClockOffsetAllPerformanceLevels"
+nsAttribsArr[powerMizer]="[gpu:#]/GPUPowerMizerMode"
+nsAttribsArr[fanControl]="[gpu:#]/GPUFanControlState"
+nsAttribsArr[fanSpeed]="[fan:#]/GPUTargetFanSpeed"
+
+
+# nvidia-smi --query-gpu=clocks.gr,clocks.mem,clocks.sm --format=csv,noheader,nounits -i 0
+declare -A nnAttribsArr
+nnAttribsArr[pMode]="-i # -pm"
+nnAttribsArr[lockClk]="-i # -lgc"
+nnAttribsArr[powerLimit]="-i # -pl"
+
+formatGpuString="--format=csv,noheader,nounits -i #"
+declare -A nnCommandsArr
+nnCommandsArr[pMode]="--query-gpu=persistence_mode $formatGpuString"
+nnCommandsArr[lockClk]="--query-gpu=clocks.gr $formatGpuString"
+nnCommandsArr[powerLimit]="--query-gpu=power.limit $formatGpuString"
 
 
 declare -A supportedCommands
@@ -57,7 +74,7 @@ doPrint() {
 		fi
 	if [[ $secondArgument == '' ]]
 		then
-			userAttribArr=("${!attribsArr[@]}")
+			userAttribArr=("${!nsAttribsArr[@]}" "${!nnCommandsArr[@]}")
 		else
 			userAttribArr=(${secondArgument//[,]/ })
 		fi
@@ -66,10 +83,21 @@ doPrint() {
 			echo "[$minor] => ${modelsArr[$minor]}"
 			for humanAttrib in "${userAttribArr[@]}"
 				do
-					attrib="${attribsArr[$humanAttrib]}"
-					unhashedAttrib=${attrib//[#]/$minor}
-					printf "\t[$humanAttrib] => "
-					nvidia-settings -c :0 -q "$unhashedAttrib" -V=errors | grep 'Attribute' | grep -o '\:[[:space:]].*[0-9]\+' | tr -d ': '
+					if [[ -v nsAttribsArr[$humanAttrib] ]]
+						then
+							attrib="${nsAttribsArr[$humanAttrib]}"
+							unhashedAttrib=${attrib//[#]/$minor}
+							printf "\t[$humanAttrib] => "
+							nvidia-settings -c :0 -tq "$unhashedAttrib" -V=errors
+						elif [[ -v nnCommandsArr[$humanAttrib] ]]
+							then
+								attrib="${nnCommandsArr[$humanAttrib]}"
+								unhashedAttrib=${attrib//[#]/$minor}
+								printf "\t[$humanAttrib] => "
+								nvidia-smi $unhashedAttrib
+						else
+							echo "Unknown attribute: $humanAttrib"
+						fi
 				done
 			printf '\n'
 		done
@@ -85,7 +113,7 @@ doSet() {
 		fi
 	if [[ $secondArgument == 'all' ]]
 		then
-			userAttribArr=("${!attribsArr[@]}")
+			userAttribArr=("${!nsAttribsArr[@]}" "${!nnCommandsArr[@]}")
 		else
 			userAttribArr=(${secondArgument//[,]/ })
 		fi
@@ -93,14 +121,19 @@ doSet() {
 		do
 			for userAttrib in "${userAttribArr[@]}"
 				do
-					attrib="${attribsArr[$userAttrib]}"
-					if [[ "$attrib" == '' ]]
+					if [[ -v nsAttribsArr[$userAttrib] ]]
 						then
+							attrib="${nsAttribsArr[$userAttrib]}"
+							unhashedAttrib=${attrib//[#]/$index}
+							nvidia-settings -V=errors -c :0 -a "$unhashedAttrib=$thirdArgument"
+						elif [[ -v nnAttribsArr[$userAttrib] ]]
+							then
+								attrib="${nnAttribsArr[$userAttrib]}"
+								unhashedAttrib=${attrib//[#]/$index}
+								nvidia-smi $unhashedAttrib $thirdArgument
+						else
 							echo "No such attrib as \'$userAttrib\'"
-							continue
 						fi
-					unhashedAttrib=${attrib//[#]/$index}
-					nvidia-settings -V=errors -c :0 -a "$unhashedAttrib=$thirdArgument"
 				done
 		done
 	if [[ $saveAfterSet == 'on' ]]
@@ -112,19 +145,34 @@ doSet() {
 
 doSave() {
 	echo "Saving to: $saveLocation"
-	saveString="#!/bin/bash\nnvidia-settings -c $theDisplay -V=errors"
+	saveString="nvidia-settings -c $theDisplay"
 	for minor in "${minorsArr[@]}"
 		do
-			for attrib in "${attribsArr[@]}"
+			for attrib in "${nsAttribsArr[@]}"
 				do
 					unhashedAttrib=${attrib//[#]/$minor}
-					theValue=$(nvidia-settings -c $theDisplay -q "$unhashedAttrib" -V=errors | grep 'Attribute' | grep -o '\:[[:space:]].*[0-9]\+' | tr -d ': ')
+					theValue=$(nvidia-settings -c :0 -tq "$unhashedAttrib" -V=errors)
 					saveString+=" -a $unhashedAttrib=$theValue"
 					printf '.'
 				done
 		done
+	saveSmi="#!/bin/bash\n"
+	for minor in "${minorsArr[@]}"
+		do
+			for humanAttrib in "${!nnAttribsArr[@]}"
+				do
+					smiArgs="${nnCommandsArr[$humanAttrib]}"
+					unhashedSmiArgs=${smiArgs//[#]/$minor}
+					theValue=$(nvidia-smi $unhashedSmiArgs | tr '[:lower:]' '[:upper:]')
+					command="${nnAttribsArr[$humanAttrib]}"
+					unhashedCommand=${command//[#]/$minor}
+					saveSmi+="nvidia-smi $unhashedCommand $theValue\n"
+					printf '.'
+				done
+		done
 	printf '\n'
-	echo -e $saveString>$saveLocation
+	echo -e $saveSmi>$saveLocation
+	echo -e $saveString>>$saveLocation
 	chmod +x $saveLocation
 }
 
