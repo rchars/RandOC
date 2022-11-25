@@ -191,14 +191,15 @@ doAutoSave() {
 
 doHelp() {
 	echo 'Usage:
-		set <all or comma separated indexes> <all or comma separated attrib names> <value> - set new values
-		print <blank or comma separated indexes> <blank or comma spearated attribs> - print attributes and current values
-		save <blank> - save current values to file (the file provided by user)
-		exit <blank> - exit script
-		autosave <blank> - save values to the file after every set
+		set <all or indexes> <all or attributes> <value>
+		print <blank or indexes> <blank or attributes>
+		save
+		exit
+		autosave
 		Examples:
 			set all fanSpeed 45
 			set 1,2,3 fanControl 0
+			set 4,5 memOffset,coreOffset 100
 			print 5,1,6
 	'
 	echo "Autosave is $saveAfterSet"
