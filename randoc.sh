@@ -30,7 +30,6 @@ for minor in "${minorsArr[@]}"
 	do
 		echo "[$minor] => ${modelsArr[$minor]}"
 		nvidia-smi -i "$minor" -pm 1
-		# nvidia-settings -V=error -a "[gpu:$minor]/GPUPowerMizerMode=1"
 		nvidia-settings -a "[gpu:$minor]/GPUPowerMizerMode=1"
 	done
 
@@ -43,11 +42,11 @@ nsAttribsArr[fanControl]="[gpu:#]/GPUFanControlState"
 nsAttribsArr[fanSpeed]="[fan:#]/GPUTargetFanSpeed"
 
 
-# nvidia-smi --query-gpu=clocks.gr,clocks.mem,clocks.sm --format=csv,noheader,nounits -i 0
 declare -A nnAttribsArr
 nnAttribsArr[pMode]="-i # -pm"
 nnAttribsArr[lockClk]="-i # -lgc"
 nnAttribsArr[powerLimit]="-i # -pl"
+
 
 formatGpuString="--format=csv,noheader,nounits -i #"
 declare -A nnCommandsArr
